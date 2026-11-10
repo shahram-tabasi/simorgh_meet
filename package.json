@@ -1,0 +1,16 @@
+{
+  "name": "simorgh-meet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent Simorgh Meet collaboration and video meeting platform",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @simorgh-meet/api",
+    "typecheck": "npm run typecheck --workspace @simorgh-meet/api"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}
