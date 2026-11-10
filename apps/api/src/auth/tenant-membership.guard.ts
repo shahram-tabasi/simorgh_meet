@@ -9,6 +9,7 @@ import { DatabaseService } from '../database/database.service';
 import { AuthenticatedRequest, TenantContext } from './auth.types';
 
 interface MembershipRow {
+  [column: string]: any;
   organization_id: string;
   organization_name: string;
   organization_slug: string;

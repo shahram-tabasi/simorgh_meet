@@ -3,6 +3,7 @@ import { DatabaseService } from '../database/database.service';
 import { AuthenticatedIdentity } from '../auth/auth.types';
 
 interface OrganizationMembershipRow {
+  [column: string]: any;
   organization_id: string;
   organization_name: string;
   organization_slug: string;
