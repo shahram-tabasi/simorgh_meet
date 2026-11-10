@@ -6,6 +6,18 @@ const envSchema = z.object({
   DATABASE_URL: z.string().trim().optional().transform((value) => value || undefined),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(250).max(60000).default(5000),
+  OIDC_ISSUER: z.string().url().optional(),
+  OIDC_AUDIENCE: z.string().trim().min(1).optional(),
+  OIDC_JWKS_URL: z.string().url().optional(),
+}).superRefine((value, context) => {
+  const configured = [value.OIDC_ISSUER, value.OIDC_AUDIENCE, value.OIDC_JWKS_URL]
+    .filter(Boolean).length;
+  if (configured !== 0 && configured !== 3) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'OIDC_ISSUER, OIDC_AUDIENCE, and OIDC_JWKS_URL must be configured together.',
+    });
+  }
 });
 
 const parsed = envSchema.safeParse(process.env);

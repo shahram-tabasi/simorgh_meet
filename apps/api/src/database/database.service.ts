@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { Pool } from 'pg';
+import { Pool, QueryResult, QueryResultRow } from 'pg';
 import { env } from '../config/env';
 
 @Injectable()
@@ -15,6 +15,14 @@ export class DatabaseService implements OnModuleDestroy {
 
   isConfigured(): boolean {
     return this.pool !== null;
+  }
+
+  async query<T extends QueryResultRow = QueryResultRow>(
+    sql: string,
+    parameters: unknown[] = [],
+  ): Promise<QueryResult<T>> {
+    if (!this.pool) throw new Error('Database is not configured.');
+    return this.pool.query<T>(sql, parameters);
   }
 
   async ping(): Promise<boolean> {
