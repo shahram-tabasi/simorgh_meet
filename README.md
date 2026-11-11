@@ -11,13 +11,41 @@ Jitsi is the initial media engine. Product identity, organizations, memberships,
 
 ## Repository status
 
-The repository currently contains the initial architecture/security documents and the API foundation milestone. Meeting-domain extraction is not yet complete.
+- **On-Premise offline package** (`deploy/on-premise`, `tools/package`): one self-extracting installer
+  with Docker Engine, Compose, all images and AI models; configuration wizard; `simorgh-meet` management CLI
+  (backup/restore/upgrade/users/minutes). Verified by a real install of the full stack.
+- **Automatic AI minutes** (`services/ai`): Persian streaming STT compatible with Jitsi Jigasi (per-speaker
+  audio, live captions) + local LLM minutes with decisions and action items, stored in PostgreSQL.
+- **API foundation** (`apps/api`) and product schema (`apps/api/migrations`), including rooms, groups,
+  recordings, transcripts, minutes, action items, calendar feeds and attendance.
+- The web portal and meeting-management API endpoints are not built yet — see the feature map.
 
 ## Documentation
 
+- [On-Premise installation guide (فارسی/English)](docs/ON-PREMISE-INSTALL.md)
+- [AI minutes & Persian/Kermani speech recognition](docs/AI-MINUTES-AND-PERSIAN-STT.md)
+- [Feature map and status](docs/FEATURE-MAP.md)
 - [Product architecture](docs/PRODUCT-ARCHITECTURE.md)
 - [KARA extraction plan](docs/EXTRACTION-PLAN.md)
 - [Security baseline](docs/SECURITY-BASELINE.md)
+
+## Building the offline installer
+
+On a machine with internet access and Docker (once per release):
+
+```bash
+tools/package/fetch-artifacts.sh
+```
+
+```bash
+tools/package/build-images.sh
+```
+
+```bash
+tools/package/build-bundle.sh
+```
+
+Install on the target server (no internet needed): `sudo sh simorgh-meet-<version>.run`.
 
 ## Development
 
@@ -32,8 +60,14 @@ npm run typecheck
 
 The API can start without a database for liveness checks. Readiness reports unavailable until a valid PostgreSQL `DATABASE_URL` is configured.
 
-## Current milestone
+## AI service development
 
-**API foundation:** NestJS application bootstrap, environment parsing, PostgreSQL connection lifecycle, and health/readiness endpoints.
+```bash
+cd services/ai && pip install -e ".[test,whisper]" && python -m pytest -q
+```
 
-No KARA source code has been copied into this repository yet.
+Set `TEST_DATABASE_URL` to a disposable database with the API migrations applied to include the
+PostgreSQL persistence test. `tools/ci/validate-deploy.sh` renders a full On-Premise configuration and
+validates the compose stack.
+
+No KARA source code has been copied into this repository.

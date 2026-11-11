@@ -1,0 +1,64 @@
+name: On-Premise package & AI CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ai-service:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: simorgh_meet
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: simorgh_meet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U simorgh_meet -d simorgh_meet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://simorgh_meet:ci-password@localhost:5432/simorgh_meet
+      TEST_DATABASE_URL: postgres://simorgh_meet:ci-password@localhost:5432/simorgh_meet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply product migrations
+        run: npm install && npm run db:migrate --workspace @simorgh-meet/api
+      - name: Install AI service
+        working-directory: services/ai
+        run: pip install -e ".[test]"
+      - name: Test AI service (STT protocol, segmentation, minutes, DB persistence)
+        working-directory: services/ai
+        run: python -m pytest -q
+
+  deploy-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck installer, CLI and packaging scripts
+        run: |
+          pip install shellcheck-py==0.11.0.1
+          shellcheck -x -S warning deploy/on-premise/install.sh deploy/on-premise/bin/simorgh-meet \
+            deploy/on-premise/installer/lib/*.sh deploy/on-premise/templates/postgres-init/*.sh \
+            tools/package/fetch-artifacts.sh tools/package/build-*.sh tools/package/convert-stt-model.sh \
+            tools/ci/validate-deploy.sh
+          sh -n tools/package/run-header.sh
+      - name: Render configuration and validate compose stack
+        run: tools/ci/validate-deploy.sh
+      - name: Build application images
+        run: |
+          docker build -t simorgh-meet/api:ci -f apps/api/Dockerfile .
+          docker build -t simorgh-meet/ai:ci services/ai
+          docker run --rm --network none simorgh-meet/ai:ci python -c "import faster_whisper, sherpa_onnx, simorgh_ai.cli"

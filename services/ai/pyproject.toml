@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simorgh-ai"
+version = "0.1.0"
+description = "Simorgh Meet AI: Persian streaming STT for Jitsi and automatic meeting minutes"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.162.4",
+  "uvicorn[standard]==0.54.0",
+  "numpy==2.5.4",
+  "httpx==0.28.1",
+  "psycopg[binary]==3.3.8",
+  "PyJWT[crypto]==2.15.1",
+  "tzdata",
+]
+
+[project.optional-dependencies]
+whisper = ["faster-whisper==1.2.1"]
+sherpa = ["sherpa-onnx==2.0.1"]
+test = ["pytest==9.2.0"]
+
+[project.scripts]
+simorgh-ai = "simorgh_ai.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["simorgh_ai*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

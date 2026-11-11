@@ -1,0 +1,68 @@
+{
+  "realm": "simorgh",
+  "enabled": true,
+  "displayName": "@@ORGANIZATION_NAME@@",
+  "loginTheme": "keycloak",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["fa", "en"],
+  "defaultLocale": "fa",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 28800,
+  "passwordPolicy": "length(10) and notUsername",
+  "clients": [
+    {
+      "clientId": "simorgh-meet-api",
+      "name": "Simorgh Meet API",
+      "enabled": true,
+      "bearerOnly": true,
+      "publicClient": false,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "simorgh-meet-web",
+      "name": "Simorgh Meet Web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "protocol": "openid-connect",
+      "rootUrl": "@@PUBLIC_URL@@",
+      "baseUrl": "/",
+      "redirectUris": ["@@PUBLIC_URL@@/*"],
+      "webOrigins": ["@@PUBLIC_URL@@"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "@@PUBLIC_URL@@/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "simorgh-meet-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "@@ADMIN_USERNAME@@",
+      "email": "@@ADMIN_EMAIL@@",
+      "firstName": "@@ADMIN_DISPLAY_NAME@@",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "@@ADMIN_PASSWORD@@", "temporary": true }
+      ]
+    }
+  ]
+}

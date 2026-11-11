@@ -1,0 +1,243 @@
+# Simorgh Meet overlay on top of the vendored docker-jitsi-meet stack.
+#
+#   docker compose --env-file .env \
+#     -f jitsi/docker-compose.yml -f jitsi/jibri.yml -f jitsi/transcriber.yml -f simorgh.yml up -d
+#
+# Profiles (COMPOSE_PROFILES in .env):
+#   recording  -> jibri (meeting recording)
+#   ai         -> transcriber (jigasi) + stt + llm + ai-worker (automatic minutes)
+#   idp        -> keycloak (OIDC identity provider for the Simorgh API)
+#   turn       -> coturn (only for guests behind restrictive NAT/firewalls)
+# Every image is pinned and shipped inside the offline bundle (see tools/package).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  # ---------------------------------------------------------------- Jitsi tweaks
+  web:
+    logging: *logging
+    volumes:
+      - ${SIMORGH_HOME}/config/nginx-custom:/config/nginx-custom:ro
+  prosody:
+    logging: *logging
+  jicofo:
+    logging: *logging
+  jvb:
+    logging: *logging
+  jibri:
+    profiles: ["recording"]
+    logging: *logging
+    # Jibri's Chrome opens PUBLIC_URL; make an internal-only DNS name resolvable.
+    extra_hosts:
+      - "${PUBLIC_HOST}:${LAN_IP}"
+  transcriber:
+    profiles: ["ai"]
+    logging: *logging
+    volumes:
+      - ${SIMORGH_HOME}/config/jigasi/11-simorgh-transcripts:/etc/cont-init.d/11-simorgh-transcripts:ro
+    depends_on:
+      - prosody
+      - stt
+
+  # -------------------------------------------------------------- Simorgh core
+  postgres:
+    image: postgres:${POSTGRES_IMAGE_TAG}
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    environment:
+      POSTGRES_DB: simorgh_meet
+      POSTGRES_USER: simorgh_meet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - ${DATA_DIR}/postgres:/var/lib/postgresql/data
+      - ${SIMORGH_HOME}/config/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simorgh_meet -d simorgh_meet"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      simorgh:
+
+  api:
+    image: simorgh-meet/api:${SIMORGH_VERSION}
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      DATABASE_URL: postgres://simorgh_meet:${POSTGRES_PASSWORD}@postgres:5432/simorgh_meet
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:-}
+      TZ: ${TZ}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      simorgh:
+      meet.jitsi:
+        aliases: [simorgh-api]
+
+  keycloak:
+    image: keycloak/keycloak:${KEYCLOAK_IMAGE_TAG}
+    profiles: ["idp"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: ${PUBLIC_URL}/auth
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      JAVA_OPTS_KC_HEAP: "-XX:MaxRAMPercentage=50 -Xms256m -Xmx${KEYCLOAK_MAX_HEAP:-1024m}"
+      TZ: ${TZ}
+    volumes:
+      - ${SIMORGH_HOME}/config/keycloak:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      simorgh:
+      meet.jitsi:
+        aliases: [simorgh-keycloak]
+
+  # ----------------------------------------------------- AI: STT + LLM minutes
+  stt:
+    image: simorgh-meet/ai:${SIMORGH_VERSION}
+    profiles: ["ai"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    command: ["simorgh-ai", "stt-server"]
+    environment: &ai-env
+      STT_ENGINE: ${STT_ENGINE}
+      STT_MODEL_PATH: /models/stt/${STT_MODEL_DIR}
+      STT_REFINE_MODEL_PATH: ${STT_REFINE_MODEL_PATH:-}
+      STT_LANGUAGE: fa
+      STT_FORCE_LANGUAGE: ${STT_FORCE_LANGUAGE:-1}
+      STT_COMPUTE_TYPE: ${STT_COMPUTE_TYPE:-int8}
+      STT_CPU_THREADS: ${STT_CPU_THREADS}
+      STT_WORKERS: ${STT_WORKERS}
+      STT_LIVE_BEAM_SIZE: ${STT_LIVE_BEAM_SIZE:-1}
+      STT_FINAL_BEAM_SIZE: ${STT_FINAL_BEAM_SIZE:-5}
+      STT_INPUT_SAMPLE_RATE: ${STT_INPUT_SAMPLE_RATE:-16000}
+      STT_PARTIAL_INTERVAL_S: ${STT_PARTIAL_INTERVAL_S:-0}
+      STT_HOTWORDS: ${STT_HOTWORDS:-}
+      STT_DATA_DIR: /data/stt
+      LLM_BASE_URL: http://llm:8080/v1
+      LLM_MODEL: minutes
+      LLM_CHUNK_CHARS: ${LLM_CHUNK_CHARS:-12000}
+      DATABASE_URL: postgres://simorgh_meet:${POSTGRES_PASSWORD}@postgres:5432/simorgh_meet
+      JIGASI_TRANSCRIPTS_DIR: /data/transcripts
+      RECORDINGS_DIR: /data/recordings
+      MINUTES_DIR: /data/minutes
+      AI_REFINE_TRANSCRIPT: ${AI_REFINE_TRANSCRIPT:-1}
+      AI_TRANSCRIBE_RECORDINGS: ${AI_TRANSCRIBE_RECORDINGS:-1}
+      AI_MINUTES_MIN_WORDS: ${AI_MINUTES_MIN_WORDS:-30}
+      ORGANIZATION_NAME: ${ORGANIZATION_NAME}
+      TZ: ${TZ}
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - ${MODELS_DIR}:/models:ro
+      - ${DATA_DIR}/stt:/data/stt
+    cpus: ${STT_CPU_LIMIT}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=4).status==200 else 1)"]
+      interval: 20s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+    networks:
+      meet.jitsi:
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:${LLAMACPP_IMAGE_TAG}
+    profiles: ["ai"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    command:
+      - "-m"
+      - "/models/llm/${LLM_MODEL_FILE}"
+      - "--alias"
+      - "minutes"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "-c"
+      - "${LLM_CONTEXT:-16384}"
+      - "-t"
+      - "${LLM_THREADS}"
+      - "--parallel"
+      - "1"
+      - "--jinja"
+      - "--no-webui"
+    volumes:
+      - ${MODELS_DIR}:/models:ro
+    cpus: ${LLM_CPU_LIMIT}
+    networks:
+      simorgh:
+
+  ai-worker:
+    image: simorgh-meet/ai:${SIMORGH_VERSION}
+    profiles: ["ai"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    command: ["simorgh-ai", "worker"]
+    environment: *ai-env
+    volumes:
+      - ${MODELS_DIR}:/models:ro
+      - ${DATA_DIR}/stt:/data/stt
+      - ${CONFIG}/transcripts:/data/transcripts:ro
+      - ${CONFIG}/jibri/recordings:/data/recordings:ro
+      - ${DATA_DIR}/minutes:/data/minutes
+    cpus: ${STT_CPU_LIMIT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      simorgh:
+
+  # ------------------------------------------------------------- optional TURN
+  coturn:
+    image: coturn/coturn:${COTURN_IMAGE_TAG}
+    profiles: ["turn"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    logging: *logging
+    network_mode: host
+    command:
+      - "-n"
+      - "--listening-port=${TURN_PORT:-3478}"
+      - "--external-ip=${PUBLIC_IP}"
+      - "--realm=${PUBLIC_HOST}"
+      - "--use-auth-secret"
+      - "--static-auth-secret=${TURN_SECRET}"
+      - "--min-port=49160"
+      - "--max-port=49200"
+      - "--no-cli"
+      - "--no-tlsv1"
+      - "--no-tlsv1_1"
+      - "--denied-peer-ip=0.0.0.0-0.255.255.255"
+      - "--denied-peer-ip=127.0.0.0-127.255.255.255"
+      - "--fingerprint"
+
+networks:
+  simorgh:

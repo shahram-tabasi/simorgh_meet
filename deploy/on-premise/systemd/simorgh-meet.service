@@ -1,0 +1,16 @@
+[Unit]
+Description=Simorgh Meet conference platform
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/simorgh-meet up
+ExecStop=/usr/local/bin/simorgh-meet down
+TimeoutStartSec=900
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

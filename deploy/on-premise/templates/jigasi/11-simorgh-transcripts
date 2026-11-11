@@ -1,0 +1,8 @@
+#!/usr/bin/with-contenv bash
+# Simorgh Meet: runs after upstream 10-config. Upstream hard-codes SAVE_JSON=false;
+# the AI minutes worker needs Jigasi's final JSON transcript (room name, display
+# names, join/leave events). Java properties: the last occurrence of a key wins.
+cat >> /config/sip-communicator.properties <<'PROPS'
+org.jitsi.jigasi.transcription.SAVE_JSON=true
+org.jitsi.jigasi.transcription.SAVE_TXT=true
+PROPS

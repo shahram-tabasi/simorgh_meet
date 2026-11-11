@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+# simorgh-meet — management CLI for an On-Premise Simorgh Meet installation.
+#
+#   simorgh-meet up | down | restart [svc] | status | logs [svc] [-f]
+#   simorgh-meet health                     check every component
+#   simorgh-meet user add NAME [PASSWORD]   create a meeting host (internal auth)
+#   simorgh-meet user del NAME | user passwd NAME [PASSWORD] | user list
+#   simorgh-meet backup [--with-recordings] [DIR]
+#   simorgh-meet restore FILE.tar.gz [--yes]
+#   simorgh-meet minutes list | minutes regenerate MEETING_ID
+#   simorgh-meet glossary add ORG_ID TERM [NORMALIZED]   (improves STT/minutes spelling)
+#   simorgh-meet maintenance                apply retention, prune backups (daily timer)
+#   simorgh-meet upgrade /path/to/simorgh-meet-<ver>.run
+#   simorgh-meet compose <args…>            raw docker compose with the right files
+#   simorgh-meet uninstall [--purge]
+#   simorgh-meet version
+set -Eeuo pipefail
+
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+SIMORGH_HOME=${SIMORGH_HOME:-$(cd "$(dirname "$SELF")/.." && pwd)}
+ENV_FILE="$SIMORGH_HOME/.env"
+LOG_FILE=${LOG_FILE:-/var/log/simorgh-meet.log}
+# shellcheck source=../installer/lib/common.sh
+. "$SIMORGH_HOME/bin/common.sh" 2>/dev/null || . "$(dirname "$SELF")/../installer/lib/common.sh"
+
+env_get() { # KEY [default]
+  local line
+  line=$(grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1) || true
+  line=${line#*=}; line=${line#\'}; line=${line%\'}
+  printf '%s' "${line:-${2:-}}"
+}
+
+[ -f "$ENV_FILE" ] || die "Not installed: $ENV_FILE not found"
+DATA_DIR=$(env_get DATA_DIR /var/lib/simorgh-meet)
+CONFIG_DIR=$(env_get CONFIG "$DATA_DIR/jitsi")
+
+compose() {
+  docker compose --project-directory "$SIMORGH_HOME/compose" --env-file "$ENV_FILE" \
+    -f "$SIMORGH_HOME/compose/jitsi/docker-compose.yml" \
+    -f "$SIMORGH_HOME/compose/jitsi/jibri.yml" \
+    -f "$SIMORGH_HOME/compose/jitsi/transcriber.yml" \
+    -f "$SIMORGH_HOME/compose/simorgh.yml" "$@"
+}
+
+psql_exec() { compose exec -T postgres psql -v ON_ERROR_STOP=1 -U simorgh_meet -d simorgh_meet "$@"; }
+
+cmd_up() {
+  require_root
+  # Offline product: never reach for a registry; a missing image is a packaging error.
+  compose up -d --remove-orphans --pull never
+}
+
+cmd_wait_healthy() {
+  local unhealthy
+  for _ in $(seq 1 60); do
+    unhealthy=$(compose ps --format '{{.Service}} {{.State}} {{.Health}}' 2>/dev/null \
+      | awk '$2!="running" || ($3!="" && $3!="healthy") {print $1}' | tr '\n' ' ')
+    [ -z "$unhealthy" ] && { ok "All services running"; return 0; }
+    sleep 5
+  done
+  warn "Not ready: $unhealthy"
+  return 1
+}
+
+cmd_health() {
+  local url; url=$(env_get PUBLIC_URL)
+  compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Status}}'
+  echo
+  check() { if eval "$2" >/dev/null 2>&1; then ok "$1"; else warn "$1: FAILED"; fi; }
+  check "Web (HTTPS)" "curl -fsSk --noproxy '*' --max-time 5 '$url/' -o /dev/null"
+  check "API readiness" "curl -fsSk --noproxy '*' --max-time 5 '$url/api/health/ready'"
+  if compose ps --services --status running | grep -qx stt; then
+    check "Speech-to-text" "compose exec -T stt python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=4)\""
+  fi
+  if compose ps --services --status running | grep -qx llm; then
+    check "AI language model" "compose exec -T ai-worker python -c \"import urllib.request;urllib.request.urlopen('http://llm:8080/health',timeout=4)\""
+  fi
+  if compose ps --services --status running | grep -qx keycloak; then
+    check "Identity server" "curl -fsSk --noproxy '*' --max-time 5 '$url/auth/realms/simorgh/.well-known/openid-configuration'"
+  fi
+  local free; free=$(disk_free_gb "$DATA_DIR")
+  [ "$free" -ge 20 ] && ok "Disk free: ${free} GB" || warn "Disk free: ${free} GB (low)"
+}
+
+cmd_user() {
+  local action=${1:-}; shift || true
+  local domain; domain=$(env_get XMPP_DOMAIN meet.jitsi)
+  local prosodyctl=(compose exec -T prosody prosodyctl --config /config/prosody.cfg.lua)
+  case $action in
+    add|passwd)
+      local name=${1:?username required} pass=${2:-}
+      is_username "$name" || die "Username must be lowercase latin (a-z, 0-9, . _ -), 3-32 chars"
+      [ "$(env_get AUTH_TYPE)" = internal ] || warn "AUTH_TYPE is not 'internal'; hosts are managed by the Simorgh portal"
+      if [ -z "$pass" ]; then ask_secret pass "Password for $name"; fi
+      "${prosodyctl[@]}" register "$name" "$domain" "$pass" >/dev/null
+      ok "Host account '$name' saved" ;;
+    del)
+      "${prosodyctl[@]}" unregister "${1:?username required}" "$domain" >/dev/null
+      ok "Host account '$1' removed" ;;
+    list)
+      compose exec -T prosody sh -c "ls /config/data/${domain//./%2e}/accounts 2>/dev/null | sed 's/\\.dat\$//'" ;;
+    *) die "usage: simorgh-meet user add|del|passwd|list" ;;
+  esac
+}
+
+cmd_backup() {
+  require_root
+  local with_rec=0 dest="$DATA_DIR/backups"
+  while [ $# -gt 0 ]; do
+    case $1 in --with-recordings) with_rec=1 ;; *) dest=$1 ;; esac; shift
+  done
+  local ts work out; ts=$(date +%Y%m%d-%H%M%S); work=$(mktemp -d); out="$dest/simorgh-meet-$ts.tar.gz"
+  install -d -m 0700 "$dest"
+  info "Dumping databases…"
+  compose exec -T postgres pg_dump -U simorgh_meet -Fc simorgh_meet >"$work/simorgh_meet.dump"
+  if compose exec -T postgres psql -U simorgh_meet -tAc "SELECT 1 FROM pg_database WHERE datname='keycloak'" | grep -q 1; then
+    compose exec -T postgres pg_dump -U simorgh_meet -Fc keycloak >"$work/keycloak.dump"
+  fi
+  info "Archiving configuration, transcripts and minutes…"
+  local items=(-C "$SIMORGH_HOME" .env install-answers.env config pki
+               -C "$DATA_DIR" minutes stt jitsi/prosody jitsi/web/keys)
+  [ "$with_rec" = 1 ] && items+=(jitsi/jibri/recordings)
+  tar -czf "$work/files.tar.gz" --ignore-failed-read "${items[@]}" 2>>"$LOG_FILE" || true
+  cp "$SIMORGH_HOME/manifest.env" "$work/" 2>/dev/null || true
+  umask 077
+  tar -czf "$out" -C "$work" .
+  rm -rf "$work"
+  ok "Backup written: $out ($(du -h "$out" | cut -f1))"
+}
+
+cmd_restore() {
+  require_root
+  local file=${1:?backup file required} work yes=0
+  [ "${2:-}" = --yes ] && yes=1
+  [ -f "$file" ] || die "Not found: $file"
+  warn "Restore replaces the current database, configuration and minutes."
+  [ "$yes" = 1 ] || ask_yn yes "Continue? / ادامه؟" n
+  [ "$yes" = 1 ] || exit 1
+  work=$(mktemp -d); tar -xzf "$file" -C "$work"
+  compose stop
+  compose up -d postgres
+  sleep 5
+  for db in simorgh_meet keycloak; do
+    [ -f "$work/$db.dump" ] || continue
+    info "Restoring database $db"
+    compose exec -T postgres psql -U simorgh_meet -d postgres -c "DROP DATABASE IF EXISTS $db WITH (FORCE)"
+    compose exec -T postgres psql -U simorgh_meet -d postgres -c "CREATE DATABASE $db OWNER $( [ $db = keycloak ] && echo keycloak || echo simorgh_meet)"
+    compose exec -T postgres pg_restore -U simorgh_meet -d "$db" --no-owner --role="$( [ $db = keycloak ] && echo keycloak || echo simorgh_meet)" <"$work/$db.dump"
+  done
+  local files; files=$(mktemp -d); tar -xzf "$work/files.tar.gz" -C "$files"
+  for f in .env install-answers.env config pki; do [ -e "$files/$f" ] && cp -a "$files/$f" "$SIMORGH_HOME/"; done
+  for d in minutes stt jitsi; do [ -e "$files/$d" ] && cp -a "$files/$d" "$DATA_DIR/"; done
+  rm -rf "$work" "$files"
+  # Offline product: never reach for a registry; a missing image is a packaging error.
+  compose up -d --remove-orphans --pull never
+  ok "Restore completed"
+}
+
+cmd_minutes() {
+  case ${1:-list} in
+    list)
+      psql_exec -c "SELECT m.title, mm.version, mm.status, mm.created_at::timestamp(0) AS created,
+                           (SELECT count(*) FROM action_items a WHERE a.minutes_id = mm.id) AS actions
+                      FROM meeting_minutes mm JOIN meetings m ON m.id = mm.meeting_id
+                     ORDER BY mm.created_at DESC LIMIT 30"
+      echo; info "Files: $DATA_DIR/minutes/<room>/<time>/minutes.md" ;;
+    regenerate)
+      local id=${2:?meeting id required}
+      [[ $id =~ ^[0-9a-f-]{36}$ ]] || die "Invalid meeting id"
+      psql_exec -c "INSERT INTO background_jobs (organization_id, kind, payload)
+                    SELECT organization_id, 'minutes.generate', jsonb_build_object('meeting_id', id::text)
+                      FROM meetings WHERE id = '$id'"
+      ok "Queued; the AI worker will create a new minutes version" ;;
+    *) die "usage: simorgh-meet minutes list|regenerate MEETING_ID" ;;
+  esac
+}
+
+cmd_glossary() {
+  [ "${1:-}" = add ] || die "usage: simorgh-meet glossary add ORG_ID TERM [NORMALIZED]"
+  local org=${2:?} term=${3:?} norm=${4:-}
+  [[ $org =~ ^[0-9a-f-]{36}$ ]] || die "Invalid organization id"
+  compose exec -T postgres psql -v ON_ERROR_STOP=1 -U simorgh_meet -d simorgh_meet \
+    -v org="$org" -v term="$term" -v norm="$norm" <<'SQL'
+INSERT INTO organization_glossary_terms (organization_id, term, normalized)
+VALUES (:'org', :'term', NULLIF(:'norm', ''))
+ON CONFLICT (organization_id, term) DO UPDATE SET normalized = EXCLUDED.normalized;
+SQL
+  ok "Glossary term saved"
+}
+
+cmd_maintenance() {
+  local days; days=$(env_get RECORDING_RETENTION_DAYS 365)
+  if [ "$days" -gt 0 ] 2>/dev/null && [ -d "$CONFIG_DIR/jibri/recordings" ]; then
+    find "$CONFIG_DIR/jibri/recordings" -type f -mtime "+$days" -print -delete | sed 's/^/[retention] deleted /' || true
+    find "$CONFIG_DIR/jibri/recordings" -mindepth 1 -type d -empty -delete || true
+  fi
+  # Per-speaker audio is only needed for the refinement pass; keep 30 days.
+  [ -d "$DATA_DIR/stt" ] && find "$DATA_DIR/stt" -path '*/audio/*.wav' -mtime +30 -delete || true
+  # Keep the 14 newest backups.
+  if [ -d "$DATA_DIR/backups" ]; then
+    find "$DATA_DIR/backups" -maxdepth 1 -name 'simorgh-meet-*.tar.gz' -printf '%T@ %p\n' | sort -rn \
+      | awk 'NR>14 {print $2}' | xargs -r rm -f
+  fi
+  ok "Maintenance done"
+}
+
+cmd_upgrade() {
+  require_root
+  local run=${1:?path to simorgh-meet-<version>.run required}
+  [ -f "$run" ] || die "Not found: $run"
+  info "Creating a safety backup first…"
+  cmd_backup
+  bash "$run" --upgrade --prefix "$SIMORGH_HOME"
+}
+
+cmd_uninstall() {
+  require_root
+  local purge=0; [ "${1:-}" = --purge ] && purge=1
+  local yes; ask_yn yes "Stop and remove Simorgh Meet containers? / حذف شود؟" n; [ "$yes" = 1 ] || exit 1
+  compose down --remove-orphans || true
+  systemctl disable --now simorgh-meet.service simorgh-meet-maintenance.timer 2>/dev/null || true
+  rm -f /etc/systemd/system/simorgh-meet*.service /etc/systemd/system/simorgh-meet-maintenance.timer /usr/local/bin/simorgh-meet
+  systemctl daemon-reload
+  if [ "$purge" = 1 ]; then
+    warn "Purging ALL data in $DATA_DIR and $SIMORGH_HOME"
+    ask_yn yes "Really delete all meetings, recordings and minutes? / همه داده‌ها حذف شود؟" n
+    [ "$yes" = 1 ] && rm -rf "$DATA_DIR" "$SIMORGH_HOME"
+  fi
+  ok "Uninstalled (Docker Engine was left installed)"
+}
+
+main() {
+  local cmd=${1:-help}; shift || true
+  case $cmd in
+    up|start) cmd_up ;;
+    down|stop) require_root; compose down ;;
+    restart) require_root; if [ $# -gt 0 ]; then compose restart "$@"; else compose down; cmd_up; fi ;;
+    status|ps) compose ps ;;
+    logs) compose logs --tail 200 "$@" ;;
+    wait-healthy) cmd_wait_healthy ;;
+    health) cmd_health ;;
+    user) cmd_user "$@" ;;
+    backup) cmd_backup "$@" ;;
+    restore) cmd_restore "$@" ;;
+    minutes) cmd_minutes "$@" ;;
+    glossary) cmd_glossary "$@" ;;
+    maintenance) cmd_maintenance ;;
+    upgrade) cmd_upgrade "$@" ;;
+    uninstall) cmd_uninstall "$@" ;;
+    compose) compose "$@" ;;
+    version) cat "$SIMORGH_HOME/manifest.env" ;;
+    help|-h|--help) sed -n '2,17p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+    *) die "Unknown command: $cmd (see: simorgh-meet help)" ;;
+  esac
+}
+
+main "$@"
