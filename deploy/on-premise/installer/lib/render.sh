@@ -180,6 +180,21 @@ EOF
   umask 022
 }
 
+install_jitsi_branding() {
+  local source=$1 target=$2 pending
+  pending=$(mktemp "${target}.XXXXXX")
+  if [ -f "$target" ]; then
+    sed '/^\/\/ BEGIN SIMORGH MEET BRANDING$/,/^\/\/ END SIMORGH MEET BRANDING$/d' "$target" >"$pending"
+  fi
+  {
+    printf '\n// BEGIN SIMORGH MEET BRANDING\n'
+    cat "$source"
+    printf '// END SIMORGH MEET BRANDING\n'
+  } >>"$pending"
+  chmod 0644 "$pending"
+  mv -f "$pending" "$target"
+}
+
 render_configs() {
   local url; url=$(public_url)
   install -d -m 0755 "$SIMORGH_HOME/config/nginx-custom" "$SIMORGH_HOME/config/postgres-init"
@@ -187,6 +202,24 @@ render_configs() {
   sed "s|@@HTTPS_PORT_SUFFIX@@|${port_suffix}|g" "$BUNDLE_DIR/templates/nginx-custom/simorgh.conf" \
     >"$SIMORGH_HOME/config/nginx-custom/simorgh.conf"
   chmod 0644 "$SIMORGH_HOME/config/nginx-custom/simorgh.conf"
+  local portal="$SIMORGH_HOME/config/portal"
+  install -d -m 0755 "$portal" "$DATA_DIR/jitsi/web"
+  install -m 0644 "$BUNDLE_DIR/templates/portal/"* "$portal/"
+  install_jitsi_branding "$portal/connect-config.js" "$DATA_DIR/jitsi/web/custom-config.js"
+  install_jitsi_branding "$portal/interface-config.js" "$DATA_DIR/jitsi/web/custom-interface_config.js"
+
+  # The archive serves installation-wide records, independent of meeting host accounts.
+  local archive_credentials="$SIMORGH_HOME/archive-credentials.txt"
+  local archive_auth="$SIMORGH_HOME/config/nginx-custom/archive.htpasswd"
+  local archive_password archive_hash
+  if [ ! -s "$archive_auth" ]; then
+    archive_password=$(random_secret 32)
+    archive_hash=$(printf '%s\n' "$archive_password" | openssl passwd -6 -stdin)
+    (umask 077; printf 'Archive username: archive-admin\nArchive password: %s\n' "$archive_password" >"$archive_credentials")
+    printf 'archive-admin:%s\n' "$archive_hash" >"$archive_auth"
+    chmod 0644 "$archive_auth"
+  fi
+
   install -m 0755 "$BUNDLE_DIR/templates/postgres-init/10-keycloak.sh" "$SIMORGH_HOME/config/postgres-init/10-keycloak.sh"
 
   install -d -m 0755 "$SIMORGH_HOME/config/jigasi"

@@ -22,6 +22,10 @@ services:
     logging: *logging
     volumes:
       - ${SIMORGH_HOME}/config/nginx-custom:/config/nginx-custom:ro
+      - ${SIMORGH_HOME}/config/portal:/opt/simorgh-portal:ro
+      - ${SIMORGH_HOME}/config/portal/title.html:/usr/share/jitsi-meet/title.html:ro
+      - ${SIMORGH_HOME}/config/portal/plugin.head.html:/usr/share/jitsi-meet/plugin.head.html:ro
+      - ${DATA_DIR}/minutes:/opt/simorgh-minutes:ro
   prosody:
     logging: *logging
   jicofo:

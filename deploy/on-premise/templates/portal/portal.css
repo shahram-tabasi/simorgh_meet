@@ -1,0 +1,124 @@
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/simorgh/Vazirmatn.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+:root {
+  color-scheme: dark;
+  font-family: Vazirmatn, Tahoma, sans-serif;
+  color: #f4f8ff;
+  background: #030d29;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+button, input { font: inherit; }
+a:focus-visible, button:focus-visible, input:focus-visible {
+  outline: 3px solid #62ddff;
+  outline-offset: 4px;
+}
+.site-header {
+  background: #030e29e8;
+  border-bottom: 1px solid #3874b75c;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .65rem clamp(1rem, 5vw, 5rem);
+}
+.brand img {
+  display: block;
+  width: 108px;
+  height: 72px;
+  object-fit: contain;
+  mix-blend-mode: screen;
+}
+nav { display: flex; gap: clamp(1rem, 3vw, 3rem); }
+nav a { padding: .6rem 0; color: #d6e7ff; }
+nav [aria-current] { border-bottom: 2px solid #25caff; color: #fff; }
+.home {
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(ellipse at 88% 36%, #0b5ccb99, transparent 52%),
+    radial-gradient(ellipse at 22% 78%, #197ce788, transparent 51%),
+    linear-gradient(164deg, #061331 28%, #053a8f 62%, #061331 93%);
+}
+.home main { flex: 1; }
+.hero {
+  width: min(68rem, calc(100% - 2rem));
+  margin-inline: auto;
+  padding: clamp(2.4rem, 7vw, 6rem) 0;
+}
+.hero-copy { text-align: center; margin-bottom: 2.1rem; }
+h1 { font-size: clamp(2rem, 5.3vw, 4.1rem); line-height: 1.22; margin: 0; }
+h1 span { color: #3ad3ff; }
+.hero-copy p { color: #d8e8ff; margin: .9rem 0 0; }
+#join-form { width: min(57rem, 100%); margin-inline: auto; }
+label { display: block; margin: 0 .8rem .4rem; font-weight: 600; }
+.meeting-actions, .join-group, .room-actions { display: flex; gap: .65rem; }
+.join-group {
+  flex: 1;
+  min-width: 0;
+  padding: .28rem;
+  border-radius: 2rem;
+  background: #eef6ff;
+  box-shadow: 0 0 2rem #39baff40;
+}
+input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  border-radius: 2rem;
+  background: transparent;
+  color: #092750;
+  padding: .65rem 1rem;
+}
+input::placeholder { color: #4c6482; }
+button { cursor: pointer; color: #fff; border-radius: 2rem; padding: .7rem 1.13rem; font-weight: 650; }
+button:disabled { opacity: .55; cursor: default; }
+.primary { background: linear-gradient(165deg, #116aec, #063ac1); border: 1px solid #1883ff; }
+.secondary { background: #081d46; border: 1px solid #a5cbfa; }
+.status { color: #ffdbdd; min-height: 1.6rem; margin: .45rem .8rem; }
+.recent {
+  background: linear-gradient(130deg, #e6f4ffed, #c3e1ffff);
+  color: #082a56;
+  border: 1px solid #b3e8ff;
+  border-radius: 1.45rem;
+  padding: 1.4rem;
+  box-shadow: 0 0 2rem #3bc4ff5c;
+}
+h2 { margin: 0 0 .55rem; font-size: 1.25rem; }
+.recent p { margin: 0; }
+.recent ul { list-style: none; padding: 0; margin: 0; }
+.recent li + li { margin-top: .5rem; }
+.recent li a {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .65rem 1rem;
+  border-radius: .75rem;
+  background: #f2f7ff;
+}
+.recent bdi { overflow-wrap: anywhere; }
+footer { text-align: center; background: #030e29d0; padding: 1rem; color: #dbeaff; }
+footer span { display: block; font-size: .85rem; color: #bdd6f5; }
+.room { display: flex; flex-direction: column; min-height: 100dvh; }
+.room main { display: flex; flex-direction: column; flex: 1; }
+.room-status { margin: 0; padding: .45rem 1rem; background: #0d234d; text-align: center; font-size: .87rem; }
+#conference { flex: 1; min-height: 24rem; display: flex; }
+#conference iframe { flex: 1; align-self: stretch; min-height: 100%; }
+@media (max-width: 620px) {
+  .meeting-actions { flex-direction: column; }
+  .meeting-actions > .secondary { align-self: stretch; }
+  button { padding-inline: .7rem; }
+  .site-header { gap: .5rem; }
+  .brand img { width: 84px; height: 56px; }
+  .room-actions { font-size: .8rem; }
+}
+
+#conference[hidden] { display: none; }
+#after-meeting { margin: 2rem auto; width: min(48rem, calc(100% - 2rem)); }
+#after-meeting h1 { font-size: 1.7rem; }
+#after-meeting .room-actions a { text-decoration: underline; }

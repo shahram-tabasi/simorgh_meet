@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>جلسه | سیمرغ میت</title>
+  <link rel="icon" href="/simorgh/logo.png">
+  <link rel="stylesheet" href="/simorgh/portal.css">
+  <script defer src="/external_api.js"></script>
+  <script defer src="/simorgh/portal.js"></script>
+</head>
+<body class="room">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="صفحهٔ اصلی سیمرغ میت"><img src="/simorgh/logo.png" alt="Simorgh Meet"></a>
+    <div class="room-actions">
+      <button class="secondary" id="copy-invite" type="button" disabled>کپی لینک دعوت</button>
+      <button class="secondary" id="background" type="button" disabled>پس‌زمینهٔ تصویر</button>
+    </div>
+  </header>
+  <main>
+    <p class="room-status" id="room-status" role="status">برای شروع، با حساب میزبان وارد شوید. مهمانان پس از باز شدن اتاق می‌توانند بپیوندند.</p>
+    <section id="after-meeting" class="recent" hidden>
+      <h1>از جلسه خارج شدید</h1>
+      <p>اگر رونویسی فعال بوده، پس از پردازش می‌توانید متن رونویسی یا صورت‌جلسه را در بایگانی مدیر دانلود کنید.</p>
+      <div class="room-actions">
+        <a id="room-archive" href="/simorgh-archive/">دانلود متن و صورت‌جلسه</a>
+        <a href="/">بازگشت به خانه</a>
+      </div>
+    </section>
+    <div id="conference"></div>
+  </main>
+</body>
+</html>

@@ -242,8 +242,9 @@ EOF
   • Certificate        : install $SIMORGH_HOME/simorgh-meet-ca.crt as a trusted root on client devices
 EOF
   [ "${ENABLE_AI:-0}" = 1 ] && cat <<EOF
-  • AI minutes         : in a meeting, a host starts "Transcription / رونویسی" (or records the meeting);
-                         minutes appear in ${DATA_DIR}/minutes and in the Simorgh database after the meeting.
+  • AI minutes         : start "Transcription / رونویسی" or record the meeting.
+                         After processing, download text at $(public_url)/simorgh-archive/.
+  • Archive credentials: $SIMORGH_HOME/archive-credentials.txt (root only)
 EOF
   return 0
 }

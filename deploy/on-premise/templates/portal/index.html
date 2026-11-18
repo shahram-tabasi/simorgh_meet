@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>سیمرغ میت | Simorgh Meet</title>
+  <link rel="icon" href="/simorgh/logo.png">
+  <link rel="stylesheet" href="/simorgh/portal.css">
+  <script defer src="/simorgh/portal.js"></script>
+</head>
+<body class="home">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="صفحهٔ اصلی سیمرغ میت"><img src="/simorgh/logo.png" alt="Simorgh Meet"></a>
+    <nav aria-label="منوی اصلی"><a href="/" aria-current="page">خانه</a><a href="#recent">جلسات اخیر</a><a href="/simorgh-archive/">بایگانی مدیر</a></nav>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="welcome">
+      <div class="hero-copy">
+        <h1 id="welcome">به <span>سیمرغ میت</span> خوش آمدید</h1>
+        <p>جلسهٔ آنلاین خود را شروع کنید یا با لینک دعوت به جلسه بپیوندید.</p>
+      </div>
+      <form id="join-form">
+        <label for="meeting">لینک یا کد جلسه</label>
+        <div class="meeting-actions">
+          <div class="join-group">
+            <input id="meeting" dir="ltr" autocomplete="off" maxlength="2048" placeholder="meet-test">
+            <button class="primary" type="submit">پیوستن به جلسه</button>
+          </div>
+          <button class="secondary" id="create" type="button">＋ ایجاد جلسه</button>
+        </div>
+        <p class="status" id="join-error" role="alert"></p>
+      </form>
+      <section class="recent" id="recent" aria-labelledby="recent-title">
+        <h2 id="recent-title">جلسات اخیر</h2>
+        <p id="empty-recent">هنوز جلسه‌ای در این مرورگر باز نشده است.</p>
+        <ul id="recent-list"></ul>
+      </section>
+    </section>
+  </main>
+  <footer>شرکت سیمرغ فناوری هوشمند ایرانیان <span lang="en" dir="ltr">Simorgh Smart Technology of Iran</span></footer>
+</body>
+</html>

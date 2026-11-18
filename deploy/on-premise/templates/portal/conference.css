@@ -1,0 +1,9 @@
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/simorgh/Vazirmatn.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+body, body #react, body #react *, body #react button, body #react input {
+  font-family: Vazirmatn, Tahoma, sans-serif !important;
+}
