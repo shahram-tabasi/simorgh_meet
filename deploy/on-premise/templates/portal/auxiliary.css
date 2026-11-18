@@ -1,0 +1,41 @@
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/simorgh/Vazirmatn.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+body:has(.archive-brand) {
+  margin: 0 auto;
+  max-width: 72rem;
+  padding: 1rem;
+  background: #071631;
+  color: #eef6ff;
+  font: 15px Vazirmatn, Tahoma, sans-serif;
+}
+.archive-brand {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  color: #fff;
+  font-weight: 700;
+}
+.archive-brand img {
+  width: 70px;
+  height: 52px;
+  object-fit: contain;
+  mix-blend-mode: screen;
+}
+body:has(.archive-brand) a { color: #87d9ff; }
+body:has(.archive-brand) h1 { font-size: 1.2rem; overflow-wrap: anywhere; }
+body:has(.archive-brand) pre { overflow: auto; }
+.login-pf body, body.login-pf {
+  font-family: Vazirmatn, Tahoma, sans-serif;
+}
+#kc-header-wrapper::before {
+  content: "";
+  display: block;
+  width: 112px;
+  height: 76px;
+  margin: 0 auto .4rem;
+  background: url('/simorgh/logo.png') center / contain no-repeat;
+}

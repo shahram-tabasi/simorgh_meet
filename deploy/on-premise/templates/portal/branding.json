@@ -2,5 +2,5 @@
   "logoImageUrl": "/simorgh/logo.png",
   "logoClickUrl": "/",
   "backgroundColor": "#08162e",
-  "premeetingBackground": "radial-gradient(ellipse at top right, #11467e, #08162e 70%)"
+  "premeetingBackground": "linear-gradient(#08162ea8, #08162ed9), url('/simorgh/blue-globe.png') center / cover"
 }

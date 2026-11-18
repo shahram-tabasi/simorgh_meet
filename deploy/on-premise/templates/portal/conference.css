@@ -7,3 +7,20 @@
 body, body #react, body #react *, body #react button, body #react input {
   font-family: Vazirmatn, Tahoma, sans-serif !important;
 }
+
+/* Preserve the meeting layout while reducing the pre-join heading scale. */
+.prejoin-screen h1, .prejoin-screen h2 { font-size: 1.2rem !important; }
+
+/* Standalone and embedded lobby/authentication screens share this brand mark. */
+body::after {
+  content: "";
+  position: fixed;
+  inset-block-start: .6rem;
+  inset-inline-end: .8rem;
+  width: 74px;
+  height: 48px;
+  background: url('/simorgh/logo.png') center / contain no-repeat;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 10;
+}
